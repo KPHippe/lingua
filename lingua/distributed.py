@@ -149,11 +149,17 @@ def get_is_slurm_job() -> bool:
 
 
 @lru_cache()
+def is_pbs_job() -> bool:
+    return "PBS_JOBID" in os.environ and not get_is_torch_run()
+
+@lru_cache()
 def get_global_rank() -> int:
     if get_is_torch_run():
         return int(os.environ["RANK"])
     elif get_is_slurm_job():
         return int(os.environ["SLURM_PROCID"])
+    elif is_pbs_job():
+        return int(os.environ["PMI_RANK"])
     else:
         return 0
 
@@ -164,6 +170,8 @@ def get_local_rank() -> int:
         return int(os.environ["LOCAL_RANK"])
     elif get_is_slurm_job():
         return int(os.environ["SLURM_LOCALID"])
+    elif is_pbs_job():
+        return int(os.environ["PMI_LOCAL_RANK"])
     else:
         return 0
 
@@ -174,6 +182,8 @@ def get_world_size() -> int:
         return int(os.environ["WORLD_SIZE"])
     elif get_is_slurm_job():
         return int(os.environ["SLURM_NTASKS"])
+    elif is_pbs_job():
+        return int(os.environ["PMI_SIZE"])
     else:
         return 1
 
@@ -187,6 +197,8 @@ def get_is_master() -> bool:
 def get_master_port(job_id: int) -> int:
     if get_is_torch_run():
         return int(os.environ["MASTER_PORT"])
+    if is_pbs_job():  #TODO: this is normally set in PBS, remove when done debugging
+        return int(os.environ.get("MASTER_PORT", 34567))
     else:
         MIN_MASTER_PORT, MAX_MASTER_PORT = (20000, 60000)
         rng = random.Random(job_id)
@@ -257,10 +269,12 @@ def setup_torch_distributed(dist_args):
         logger.info(f"Run launched with torchrun, local rank: {local_rank}")
     elif get_is_slurm_job():
         logger.info(f"Run launched with slurm, local rank: {local_rank}")
+    elif is_pbs_job():
+        logger.info(f"Run launched with PBS (or MPI), local rank: {local_rank}")
     else:
         logger.info("Single GPU job")
 
-    logger.info(f"ENV: {os.environ}")
+    # logger.info(f"ENV: {os.environ}")
 
     # set GPU device
     assert 0 <= local_rank < 8
