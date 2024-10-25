@@ -198,6 +198,77 @@ class TikTokenTokenizer(Tokenizer):
         return substrs, offsets
 
 
+class AminoAcidTokenizer(Tokenizer):
+
+    def __init__(self) -> None:
+        # Define standard amino acids and their single-letter codes
+        AMINO_ACIDS = [
+            'A', 'R', 'N', 'D', 'C', 'E', 'Q', 'G', 'H', 'I',
+            'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V',
+        ]
+
+        # Special tokens dictionary
+        SPECIAL_TOKENS = {
+            '<BOS>': 0,  # Beginning of sequence
+            '<EOS>': 1,  # End of sequence
+            '<UNK>': 2,  # Unknown token
+            '<PAD>': 3,  # Padding
+        }
+
+        # Create token mappings, starting IDs after special tokens
+        TOKEN_TO_ID = {aa: idx + len(SPECIAL_TOKENS) for idx, aa in enumerate(AMINO_ACIDS)}
+        ID_TO_TOKEN = {idx + len(SPECIAL_TOKENS): aa for idx, aa in enumerate(AMINO_ACIDS)}
+
+        # Include special tokens in the mappings
+        TOKEN_TO_ID.update(SPECIAL_TOKENS)
+        ID_TO_TOKEN.update({id_: token for token, id_ in SPECIAL_TOKENS.items()})
+
+        self.SPECIAL_TOKENS = SPECIAL_TOKENS
+        self.TOKEN_TO_ID = TOKEN_TO_ID
+        self.ID_TO_TOKEN = ID_TO_TOKEN
+
+        # Required to satisfy API
+        self.bos_id = self.SPECIAL_TOKENS['<BOS>']
+        self.eos_id = self.SPECIAL_TOKENS['<EOS>']
+        self.n_words = len(TOKEN_TO_ID)
+
+    def encode(self, text: str, add_bos: bool = False, add_eos: bool = False) -> List[int]:
+        tokens = []
+        for char in text:
+            token_id = self.TOKEN_TO_ID.get(char, self.SPECIAL_TOKENS['<UNK>'])
+            tokens.append(token_id)
+        if add_bos:
+            tokens = [self.SPECIAL_TOKENS['<BOS>']] + tokens
+        if add_eos:
+            tokens = tokens + [self.SPECIAL_TOKENS['<EOS>']]
+        return tokens
+
+    def decode(self, tokens: List[int]) -> str:
+        chars = []
+        for token in tokens:
+            token_str = self.ID_TO_TOKEN.get(token, '<UNK>')
+            if token_str in self.SPECIAL_TOKENS:
+                continue  # Skip special tokens
+            chars.append(token_str)
+        return ''.join(chars)
+
+    def get_token_offsets(
+        self, text: str, tokens: Optional[List[int]] = None
+    ) -> Tuple[List[str], List[int]]:
+        tokens = tokens or self.encode(text)
+        token_texts = []
+        offsets = []
+        idx = 0
+        for token in tokens:
+            token_str = self.ID_TO_TOKEN.get(token, '<UNK>')
+            if token_str in self.SPECIAL_TOKENS:
+                continue  # Skip special tokens
+            token_texts.append(token_str)
+            offsets.append(idx)
+            idx += 1
+        return token_texts, offsets
+
+
 def build_tokenizer(name: str, path: Optional[str] = None) -> Tokenizer:
     if name == "bytes":
         return ByteTokenizer()
@@ -209,5 +280,7 @@ def build_tokenizer(name: str, path: Optional[str] = None) -> Tokenizer:
     elif name == "tiktoken":
         assert has_tiktoken, "tiktoken not installed"
         return TikTokenTokenizer(path)
+    elif name == "aa":
+        return AminoAcidTokenizer()
     else:
         raise NotImplementedError(f"{name} tokenizer type is not implemented")
